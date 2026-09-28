@@ -815,10 +815,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   };
 
   // Real-time calculation of total orders and order distribution per product from sheet
+  // User requirement: Sheet 2 এর Column J তে 'Complete' সিলেক্ট করা অর্ডারগুলোই শুধু এখানে মোট অর্ডার ও প্রোডাক্ট সংখ্যা হিসেবে কাউন্ট হবে
   const productOrderDistribution = useMemo(() => {
+    // Current active orders based on dateFilter
+    const activeOrders = dateFilter !== 'all' ? dateFilteredOrders : orders;
+
+    // Strictly filter orders where Sheet 2 Column J is 'Complete'
+    const completeOrders = activeOrders.filter((o) => isColJComplete(o.status));
+
     const items = unifiedProducts.map((prod) => {
+      // Complete orders matching this specific product
+      const prodCompleteOrders = completeOrders.filter((o) =>
+        matchesProductName(o, prod.productName)
+      );
+      const orderCount = prodCompleteOrders.length;
       const { prodStats } = getProductAnalytics(prod);
-      const orderCount = prodStats.lead || 0;
       return {
         id: prod.id,
         name: prod.productName,
@@ -829,21 +840,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
     const sumOrders = items.reduce((sum, it) => sum + it.orderCount, 0);
 
-    let totalOrders = 0;
-    if (dateFilter !== 'all') {
-      totalOrders = dateFilteredOrders.length > 0 ? dateFilteredOrders.length : sumOrders;
-    } else {
-      totalOrders = sumOrders > 0 ? sumOrders : (aggregatedStats.totalLead || orders.length);
-    }
+    // Total orders strictly counting Sheet 2 Column J Complete
+    const totalOrders = completeOrders.length > 0 ? completeOrders.length : sumOrders;
 
-    const effectiveTotal = totalOrders > 0 ? totalOrders : 1;
+    const effectiveTotal = totalOrders > 0 ? totalOrders : (sumOrders > 0 ? sumOrders : 1);
 
     const breakdown = items.map((it) => {
-      const pct = totalOrders > 0 ? ((it.orderCount / effectiveTotal) * 100).toFixed(1) : '0.0';
+      const pct = effectiveTotal > 0 ? ((it.orderCount / effectiveTotal) * 100).toFixed(1) : '0.0';
       return {
         ...it,
         percentage: `${pct}%`,
-        percentNum: totalOrders > 0 ? Math.min(100, (it.orderCount / effectiveTotal) * 100) : 0,
+        percentNum: effectiveTotal > 0 ? Math.min(100, (it.orderCount / effectiveTotal) * 100) : 0,
       };
     });
 
@@ -853,7 +860,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       totalOrders,
       breakdown,
     };
-  }, [unifiedProducts, dateFilteredOrders, orders, dateFilter, sheetProducts, aggregatedStats]);
+  }, [unifiedProducts, dateFilteredOrders, orders, dateFilter, sheetProducts]);
 
   // Get readable label for current date filter
   const getDateFilterLabel = () => {
